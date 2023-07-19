@@ -1,3 +1,5 @@
+#code on Colab Google
+
 import pyspark
 import uuid
 from pyspark.sql import SparkSession
