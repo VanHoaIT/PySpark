@@ -3,3 +3,21 @@ from pyspark.sql import SparkSession
 from pyspark.sql.functions import from_unixtime, unix_timestamp, date_format
 
 spark = SparkSession.builder.appName('VanHoaIT').getOrCreate()
+
+# dùng để truy cập đến drive
+from google.colab import drive
+drive.mount('/content/gdrive')
+
+# đọc dữ liệu được lưu trữ trên drive
+df = spark.read.csv("/content/gdrive/MyDrive/Colab Notebooks/data/lazada_data.csv",header=True, inferSchema=True)
+
+# định dạng cột createTime, updateTime
+df = df.withColumn("createTime", date_format(from_unixtime(unix_timestamp("createTime", "M/d/yyyy H:mm")), "yyyy-M-d H:mm:ss"))
+df = df.withColumn("updateTime", date_format(from_unixtime(unix_timestamp("updateTime", "M/d/yyyy H:mm")), "yyyy-M-d H:mm:ss"))
+
+# thay giá trị trống = None, các giá trị "nan", "Nan" thành None
+df = df.na.fill("None")
+df = df.replace("nan", "None").replace("NaN", "None")
+
+# thêm cột "datekey" và định dạng dữ liệu
+df = df.withColumn("datekey", date_format("createTime", "yyyy/MM/dd"))
