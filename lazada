@@ -1,23 +1,116 @@
 import pyspark
+import uuid
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import from_unixtime, unix_timestamp, date_format
+from pyspark.sql.types import StructType, StructField, StringType, IntegerType
+from pyspark.sql.functions import from_unixtime, unix_timestamp, date_format, col, sum,avg,max,count, lit
 
 spark = SparkSession.builder.appName('VanHoaIT').getOrCreate()
 
-# dùng để truy cập đến drive
+# access the drive
 from google.colab import drive
 drive.mount('/content/gdrive')
 
-# đọc dữ liệu được lưu trữ trên drive
+# read data stored on the drive
 df = spark.read.csv("/content/gdrive/MyDrive/Colab Notebooks/data/lazada_data.csv",header=True, inferSchema=True)
 
-# định dạng cột createTime, updateTime
-df = df.withColumn("createTime", date_format(from_unixtime(unix_timestamp("createTime", "M/d/yyyy H:mm")), "yyyy-M-d H:mm:ss"))
-df = df.withColumn("updateTime", date_format(from_unixtime(unix_timestamp("updateTime", "M/d/yyyy H:mm")), "yyyy-M-d H:mm:ss"))
+# calculate the values required by the dataframe
+purchase_order = df.groupBy("orderNumber")\
+    .agg(max("status").alias("status"),
+        max("buyerFailedDeliveryReturnInitiator").alias("Refund_status"),\
+        max("deliveryType").alias("Shipping_method"),\
+        max("buyerFailedDeliveryReason").alias("Cancellation_reason"),\
+        max("deliveredDate").alias("delivered_date"),\
+        sum("unitPrice").alias("total_price"),\
+        sum("paidPrice").alias("Total_payment"),\
+        max("payMethod").alias("Payment_method"),\
+        sum("shippingFee").alias("shipping_fee"),\
+        sum("sellerDiscountTotal").alias("Total_discount"),\
+        max("shippingAddress").alias("Street"),\
+        max("shippingAddress3").alias("city"),\
+        max("shippingAddress4").alias("District"),\
+        max("shippingAddress5").alias("Ward"),\
+        max("customerName").alias("source_customer_id"),\
+        max("customerEmail").alias("email"),\
+        max("billingPhone").alias("phone"),\
+        max("shippingName").alias("customer_name"),\
+        max("createTime").alias("create_at"),\
+        max("updateTime").alias("update_at"),\
+        max("sellerNote").alias("note"),\
+        count("orderNumber").alias("number_item"),\
+        max("billingPhone").alias("customer_unified_key")\
+    )
 
-# thay giá trị trống = None, các giá trị "nan", "Nan" thành None
-df = df.na.fill("None")
-df = df.replace("nan", "None").replace("NaN", "None")
+# rename columns to correct dataframe structure
+purchase_order = purchase_order.withColumnRenamed("orderNumber","source_order_id")
 
-# thêm cột "datekey" và định dạng dữ liệu
-df = df.withColumn("datekey", date_format("createTime", "yyyy/MM/dd"))
+# add id columns and missing columns
+purchase_order = purchase_order.withColumn("purchase_order_id", lit(str(uuid.uuid4())))\
+                              .withColumn("state", lit(None))\
+                              .withColumn("shipping_description", lit(None))\
+                              .withColumn("shipping_code", lit(None))\
+                              .withColumn("shipping_provider", lit(None))\
+                              .withColumn("Feedback", lit(None))\
+                              .withColumn("remote_ip", lit(None))\
+                              .withColumn("customer_note", lit(None))\
+                              .withColumn("year", lit(None))\
+                              .withColumn("month", lit(None))\
+                              .withColumn("day", lit(None))\
+                              .withColumn("source_name", lit(None))
+
+# sort columns according to dataframe structure
+columns_order = ["purchase_order_id",
+                 "source_order_id",
+                 "state",
+                 "status",
+                 "Refund_status",
+                 "shipping_description",
+                 "shipping_code",
+                 "shipping_provider",
+                 "Shipping_method",
+                 "Cancellation_reason",
+                 "Feedback",
+                 "delivered_date",
+                 "total_price",
+                 "Total_payment",
+                 "Payment_method",
+                 "shipping_fee",
+                 "Total_discount",
+                 "Street",
+                 "city",
+                 "District",
+                 "Ward",
+                 "source_customer_id",
+                 "email",
+                 "phone",
+                 "customer_name",
+                 "remote_ip",
+                 "customer_note",
+                 "create_at",
+                 "update_at",
+                 "note",
+                 "number_item",
+                 "year",
+                 "month",
+                 "day",
+                 "source_name",
+                 "customer_unified_key"
+                 ]
+
+# attach columns_order to dataframe
+purchase_order = purchase_order.select(*columns_order)
+
+# format columns createTime, updateTime from "M/d/yyyy H:mm" to "yyyy-M-d H:mm:ss"
+purchase_order = purchase_order.withColumn("create_at", date_format(from_unixtime(unix_timestamp("create_at", "M/d/yyyy H:mm")), "yyyy-M-d H:mm:ss"))
+purchase_order = purchase_order.withColumn("update_at", date_format(from_unixtime(unix_timestamp("update_at", "M/d/yyyy H:mm")), "yyyy-M-d H:mm:ss"))
+
+# replace empty = None, values "nan", "Nan" to None
+purchase_order = purchase_order.na.fill("None")
+purchase_order = purchase_order.replace("nan", "None").replace("NaN", "None")
+
+# add column "datekey" with column data "create_at" and format "yyyy/MM/dd"
+purchase_order = purchase_order.withColumn("datekey", date_format("create_at", "yyyy/MM/dd"))
+
+po = purchase_order.alias("po")
+# write dataframe
+# po.write.csv("/content/gdrive/MyDrive/Colab Notebooks/data/lazada_data_update.csv", header=True, mode="overwrite")
+po.coalesce(1).write.csv("/content/gdrive/MyDrive/Colab Notebooks/data/lazada_data_update.csv", header=True, mode="overwrite")
